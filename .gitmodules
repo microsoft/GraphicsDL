@@ -1,0 +1,6 @@
+[submodule "graphicsutils"]
+	path = graphicsutils
+	url = git@github.com:microsoft/GraphicsUtils.git
+[submodule "graphicstf"]
+	path = graphicstf
+	url = git@github.com:microsoft/GraphicsTF.git

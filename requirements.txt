@@ -1,0 +1,12 @@
+tensorflow-gpu==2.3.0
+tensorflow-addons
+tensorflow-graphics-gpu
+numpy
+scipy
+opencv-python
+plyfile
+pandas
+matplotlib
+PyYAML
+scikit-image
+deprecated
