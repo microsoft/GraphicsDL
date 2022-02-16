@@ -385,7 +385,9 @@ class BaseSolverV2(BaseFlower):
             next_data)
         avg_grads = self.average_tower_grads(tower_grads)
         for g, v in zip(avg_grads, self.get_trainable_vars()):
-            assert g.shape == v.shape
+            if g.shape == v.shape:
+                continue
+            LogOnce(f'Unmatched gradient and variable shape {v.name}')
         self.optimizer.apply_gradients(
             zip(avg_grads, self.get_trainable_vars()))
         self.stats_loss.update(self.average_and_rename_vars(tower_losses),
