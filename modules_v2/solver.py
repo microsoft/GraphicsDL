@@ -288,11 +288,15 @@ class BaseFlower(object):
 
 
 class BaseSolverV2(BaseFlower):
+    """
+    Base solver
+    """
     def __init__(self, args: SolverConfigurator, nets: List[tf.keras.Model],
                  losses: List[BasicLossProxy], metrics: List[BasicLossProxy],
                  dict_mode: bool = False):
         super().__init__(args, nets, losses, metrics, dict_mode)
         self.optimizer_name = args.optimizer.name
+        self.partial_mode = args.partial_mode
         self.optimizer: tf.keras.optimizers.Optimizer = self.parse_optimizer()
         self.trainable_vars = list()
 
@@ -339,6 +343,8 @@ class BaseSolverV2(BaseFlower):
             for t_scope in self.args.sequence.trainable:
                 scopes = t_scope.split('.')
                 var_scopes = scopes[1:] if len(scopes) > 1 else list()
+                if var_scopes:
+                    assert self.partial_mode == 1
                 cur_net = self.nets[scopes[0]]
                 if not var_scopes:
                     LogOnce(f'{__name__} fetches trainable vars with net -- {scopes[0]}')
@@ -398,8 +404,8 @@ class BaseSolverV2(BaseFlower):
 
     def step_kernel(self, next_data, gpu_id):
         with tf.GradientTape() as tape:
-            final_out, vis_po = self.execution_tree.execute(
-                next_data, gpu_id, True)
+            training = True if not self.partial_mode else self.args.sequence.trainable
+            final_out, vis_po = self.execution_tree.execute(next_data, gpu_id, training)
             losses = list()
             vis_pl = dict()
             for loss in self.losses:

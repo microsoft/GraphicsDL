@@ -97,6 +97,7 @@ class FlowConfigurator(g_cfg.DictRecursive):
 class SolverConfigurator(FlowConfigurator):
     def __init__(self):
         super().__init__()
+        self.partial_mode = 0
 
 
 class ValidatorConfigurator(FlowConfigurator):
