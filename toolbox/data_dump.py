@@ -7,7 +7,6 @@ import os
 from typing import Callable, Dict, List, Type, Optional
 from enum import Enum
 
-import cv2
 import tensorflow as tf
 import numpy as np
 
@@ -130,12 +129,12 @@ class DataDumpLocal:
             data_alias = f'{key}_B{b_idx}_I{self._iter}.png'
             data_path = os.path.join(saving_dir, data_alias)
 
-            if attached_fonts:
-                f_pos = (50, 50)
-                f_color = (0, 0, 255)
-                f_style = cv2.FONT_HERSHEY_SIMPLEX
-                cv2.putText(data_np, attached_fonts, f_pos, f_style, 0.5, f_color)
-            cv2.imwrite(data_path, data_np[..., ::-1])  # Change BGR to RGB
+            # if attached_fonts:
+            #     f_pos = (50, 50)
+            #     f_color = (0, 0, 255)
+            #     f_style = cv2.FONT_HERSHEY_SIMPLEX
+            #     cv2.putText(data_np, attached_fonts, f_pos, f_style, 0.5, f_color)
+            # cv2.imwrite(data_path, data_np[..., ::-1])  # Change BGR to RGB
 
     def _dump_image_grey(self, key: str, data_np: np.ndarray, map_func: Callable):
         del map_func

@@ -11,7 +11,7 @@ from typing import List, Dict
 import tensorflow as tf
 from tensorflow.keras import backend as K
 
-from graphics_dl.graphicsutils import g_cfg
+from graphics_dl.graphicsutils import config as g_cfg
 from graphics_dl.modules_v2.reader.base_reader import BaseReaderV2
 from ..graphicstf import basic
 from ..toolbox.data_dump import DataDump

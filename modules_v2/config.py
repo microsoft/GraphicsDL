@@ -3,7 +3,7 @@
 // Licensed under the MIT License.
 """
 
-from ..graphicsutils import g_cfg
+from ..graphicsutils import config as g_cfg
 
 
 class DataItemConfigurator(g_cfg.DictRecursive):
