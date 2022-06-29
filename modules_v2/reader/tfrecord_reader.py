@@ -133,71 +133,24 @@ class DefaultTFReader(BaseReaderV2):
             processed_feats.append(inputs)
         return processed_feats
 
-    def postprocess_methods(self, inputs, post_str, group, group_augmentation):
-        p_method, p_args = [a_[..., 0] for a_ in np.split(np.reshape(np.asarray(post_str.split('-')), [-1, 2]), 2,
-                                                          axis=-1)]
-        for p_m, p_a in zip(p_method, p_args):
-            if p_m == 'flip':
-                f_axis = [a_ + 1 for a_ in range(5) if 2 ** a_ & int(p_a)]
-                for a_ in f_axis:
-                    inputs = group_augmentation.random_flip(
-                        inputs, a_, f'{p_m}-{a_}', group)
-            elif p_m == 'transpose':
-                f_axis = [int(a_) for a_ in p_a]
-                inputs = group_augmentation.random_transpose(
-                    inputs, f_axis, f'{p_m}-{f_axis}', group)
-            elif p_m == 'reshape':
-                inputs = tf.reshape(inputs, (-1, int(p_a)) +
-                                    tuple(inputs.shape.dims[1:]))
-            elif p_m == 'oh':
-                inputs = tf.one_hot(inputs, int(p_a), dtype=tf.float32)
-            elif p_m == 'dim':
-                inputs = tf.reshape(inputs,
-                                    tuple(inputs.shape.dims) + (1,
-                                                                ) * (int(p_a) - inputs.shape.ndims + 1))
-            elif p_m == 'cast':
-                inputs = tf.cast(inputs, getattr(tf.dtypes, p_a))
-            elif p_m == 'divide':
-                inputs = inputs / float(p_a)
-            elif p_m == 'scale':
-                inputs = inputs * float(p_a)
-            elif p_m == 'rminus':
-                inputs = float(p_a) - inputs
-            elif p_m == 'min':
-                inputs = tf.maximum(
-                    inputs, tf.convert_to_tensor(
-                        float(p_a), dtype=inputs.dtype))
-            elif p_m == 'max':
-                inputs = tf.minimum(
-                    inputs, tf.convert_to_tensor(
-                        float(p_a), dtype=inputs.dtype))
-            elif p_m == 'pad':
-                axis, pad_size = [int(a_) for a_ in p_a.split('_')]
-                pad_array = [[0, 0]] * inputs.shape.ndims
-                pad_array[axis + 1] = [pad_size, pad_size]
-                inputs = tf.pad(inputs, pad_array)
-            elif p_m == 'blur':
-                x_points = np.arange(-(int(p_a) - 1) // 2,
-                                     (int(p_a) - 1) // 2 + 1, 1)
-                xs, ys = np.meshgrid(x_points, x_points, indexing='ij')
-                kernel = np.exp(-(xs ** 2 + ys ** 2) /
-                                (2 * 1 ** 2)) / (2 * np.pi * 1 ** 2)
-                kernel = (kernel / kernel.sum())[..., np.newaxis, np.newaxis]
-                kernel = tf.tile(tf.convert_to_tensor(kernel, tf.float32), [
-                                 1, 1, tf.shape(inputs)[-1], 1])
-                is_changed = False
-                if inputs.shape.ndims == 5:
-                    n, t, h, w, c = tf.unstack(tf.shape(inputs))
-                    inputs = tf.reshape(inputs, [n*t, h, w, c])
-                    is_changed = True
-                inputs = tf.nn.depthwise_conv2d(
-                    inputs, kernel, strides=(
-                        1, 1, 1, 1), padding='SAME')
-                if is_changed:
-                    inputs = tf.reshape(inputs, [n, t, h, w, c])
-            else:
-                raise NotImplementedError
-        return inputs
+    def postprocess_methods(self, inputs: tf.Tensor, post_str: List[str], group: str,
+        group_augmentation: str) -> tf.Tensor:
+        """
+        Post processing methods applied to inputs
+
+        Args:
+            inputs (tf.Tensor): the input data
+            post_str (List[str]): the post-processing string
+            group (str): the group to be appilied random augmentation
+            group_augmentation (str): the group name
+
+        Returns:
+            tf.Tensor: the data after post-processing
+        """
+        x = inputs
+        for p_str in post_str:
+            x = eval(p_str)
+        return x
 
     @staticmethod
     def dequantization(data: tf.Tensor, max_v: tf.Tensor, min_v: tf.Tensor):

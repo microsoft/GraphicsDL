@@ -21,10 +21,13 @@ class DataItemConfigurator(g_cfg.DictRecursive):
         # pre-process will process data before batching with CPU context
         self.preprocess = str()
         # post-process will process data after batching with GPU context
-        self.postprocess = str()
+        self.postprocess = list([str()])
 
 
 class ReaderConfigurator(g_cfg.DictRecursive):
+    """
+    The description of reader
+    """
     def __init__(self):
         super().__init__()
         self.type = str()
