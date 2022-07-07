@@ -2,15 +2,17 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 """
+# pylint: disable=no-name-in-module
 import logging
 import inspect
 from queue import LifoQueue
 from typing import List, Dict, Optional, Tuple
 from abc import abstractmethod
 
+import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
-import numpy as np
+from tensorflow.python.keras import layers
 
 from graphics_dl.utils.log import LogOnce
 
@@ -75,7 +77,10 @@ class LossScalarStatistics(object):
                 l_op.reset_states()
 
 
-class ImageScalarStatistics(tf.keras.layers.Layer):
+class ImageScalarStatistics(layers.Layer):  # pylint: disable=abstract-method
+    """
+    Image visualization interface for TensorBoard
+    """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.img_meta = None
@@ -86,12 +91,17 @@ class ImageScalarStatistics(tf.keras.layers.Layer):
                                         dtype=tf.float32)
         self.built = True
 
-    def call(self, inputs, **kwargs):
+    def call(self, inputs, *args, **kwargs):
+        del args, kwargs
         self.img_meta.assign(tf.cast(inputs, self.img_meta.dtype))
         return self.img_meta
 
 
 class ExecutionTree(object):
+    """
+    The execution tree will parse the string-defined flow and serialize into multiple
+        forward passes
+    """
     def __init__(self, flow_str: str, dict_mode: bool = False):
         self.flow_str = flow_str
         self.built = False
@@ -101,8 +111,11 @@ class ExecutionTree(object):
 
     @staticmethod
     def traversal_path(flow_str):
+        """
+        Serialize the string-defined flow
+        """
         flow = LifoQueue()
-        flow_runtime = flow_str
+        flow_runtime: str = flow_str
         flow_ops = list()
         index = 0
         mediate_mask = 0
@@ -124,17 +137,20 @@ class ExecutionTree(object):
         return flow_ops
 
     def build(self, nets):
+        """
+        Build the network passes
+        """
         logging.warning('Experimental function')
         if not self.built:
-            flow_ops = self.traversal_path(self.flow_str)
-            for f_o in flow_ops:
-                op_lists = f_o.split('-')
-                in_list = op_lists[0]
-                net_list = op_lists[1:]
+            flow_ops: List[str] = self.traversal_path(self.flow_str)
+            for f_op in flow_ops:
+                ops_desc_seq = f_op.split('-')
+                in_desc = ops_desc_seq[0]
+                nets_desc = ops_desc_seq[1:]
                 net_ins = list()
-                for n in net_list:
-                    net_ins.append(nets[int(n[1:])])
-                self.ops_flow.append((in_list, net_ins))
+                for net_desc in nets_desc:
+                    net_ins.append(nets[int(net_desc[1:])])
+                self.ops_flow.append((in_desc, net_ins))
         self.built = True
 
     def execute(self, data_list, gpu_id, training):
@@ -181,13 +197,16 @@ class ExecutionTree(object):
 
 
 class BaseFlower(object):
+    """
+    The base flower with unimplemented method `step_kernel`
+    """
     def __init__(self, args: FlowConfigurator, nets: List[tf.keras.Model],
                  losses: List[BasicLossProxy], metrics: List[BasicLossProxy],
                  dict_mode: bool = False):
         self.args = args
         self.nets: Dict[str, tf.keras.Model] = {
-            n_.name: n_
-            for n_ in nets if n_.name in args.sequence.nets
+            _n.name: _n
+            for _n in nets if _n.name in args.sequence.nets
         }
 
         self.losses: Optional[BasicLossProxy] = list()
@@ -214,8 +233,8 @@ class BaseFlower(object):
         self.vis_port: Dict[str, ImageScalarStatistics] = dict()
 
         if self.args.g_checker:
-            logging.info(
-                "Gradient checker is enable. NaN or Infinite gradients will be ignored automatically!")
+            logging.info("Gradient checker is enable. NaN/INF gradients will be\
+                ignored automatically!")
 
     @staticmethod
     def average_and_rename_vars(tower_vars):
@@ -243,9 +262,9 @@ class BaseFlower(object):
         tower_losses = list()
         tower_metrics = list()
         tower_vis_dict = list()
-        for g in range(self.args.num_devices):
-            with tf.device(f'/gpu:{g}'):
-                grads, losses, metrics, vis_dict = self.step_kernel(next_data, g)
+        for g_id in range(self.args.num_devices):
+            with tf.device(f'/gpu:{g_id}'):
+                grads, losses, metrics, vis_dict = self.step_kernel(next_data, g_id)
             tower_grads.append(grads)
             tower_losses.append(losses)
             tower_metrics.append(metrics)
@@ -254,9 +273,15 @@ class BaseFlower(object):
 
     @abstractmethod
     def step_kernel(self, next_data, gpu_id):
+        """
+        The logic of iteration definition
+        """
         pass
 
     def apply_statistics(self, writer, step, refresh, prefix):
+        """
+        Add a statistics item
+        """
         out_dict = dict()
         if self.stats_loss:
             loss_dict = self.stats_loss.apply(writer, step, refresh, prefix)
@@ -268,17 +293,23 @@ class BaseFlower(object):
         return out_dict
 
     def reset_statistics(self):
+        """
+        Reset the statistics
+        """
         if self.stats_loss:
             self.stats_loss.reset()
         if self.stats_metric:
             self.stats_metric.reset()
 
     def apply_vis_port(self, writer, step):
+        """
+        Write visualizable data into TensorBoard
+        """
         if not writer:
             return
         with writer.as_default():
-            for key in self.vis_port:
-                img_meta: tf.Tensor = self.vis_port[key].img_meta
+            for key, value in self.vis_port.items():
+                img_meta: tf.Tensor = value.img_meta
                 if img_meta.shape.ndims == 5:
                     img_meta = img_meta[0]
                 elif img_meta.shape.ndims > 5:
@@ -301,6 +332,9 @@ class BaseSolverV2(BaseFlower):
         self.trainable_vars = list()
 
     def parse_optimizer(self) -> tf.keras.optimizers.Optimizer:
+        """
+        Parse the optimizer description into optimizer
+        """
         opt_args = np.fromstring(self.args.optimizer.params, sep='-')
         if self.args.optimizer.lr_decay:
             opt_lr_decay = self.args.optimizer.lr_decay.split('_')
@@ -324,8 +358,9 @@ class BaseSolverV2(BaseFlower):
             return opt_type(lr_scheme, *opt_args[1:])
         except AttributeError:
             if self.args.optimizer.type == 'Range':
+                learning_rate = tf.convert_to_tensor(lr_scheme, tf.float32)
                 return tfa.optimizers.Lookahead(
-                    tfa.optimizers.RectifiedAdam(lr_scheme),
+                    tfa.optimizers.RectifiedAdam(learning_rate),
                     sync_period=6,
                     slow_step_size=0.5)
             elif self.args.optimizer.type == 'AdamW':
@@ -370,6 +405,9 @@ class BaseSolverV2(BaseFlower):
 
     @staticmethod
     def average_tower_grads(tower_grads):
+        """
+        Average multiple GPUs gradients
+        """
         avg_grads = list()
         for grads in zip(*tower_grads):
             avg_grads.append(tf.reduce_mean(tf.stack(grads, axis=0), axis=0))
@@ -377,6 +415,9 @@ class BaseSolverV2(BaseFlower):
 
     @staticmethod
     def multi_gpus_splitter(in_data, gpu_id):
+        """
+        Split data into GPUs
+        """
         o_data = list()
         for i in in_data:
             o_data.append(i[gpu_id])
@@ -384,16 +425,22 @@ class BaseSolverV2(BaseFlower):
 
     @tf.function
     def train_step(self, next_data):
+        """
+        Train a iteration with debug off
+        """
         self.train_step_with_debug(next_data)
 
     def train_step_with_debug(self, next_data):
+        """
+        Train a iteration with debug on
+        """
         tower_grads, tower_losses, tower_metrics, _ = self.tower_train_step_with_debug(
             next_data)
         avg_grads = self.average_tower_grads(tower_grads)
-        for g, v in zip(avg_grads, self.get_trainable_vars()):
-            if g.shape == v.shape:
+        for grad, var in zip(avg_grads, self.get_trainable_vars()):
+            if grad.shape == var.shape:
                 continue
-            LogOnce(f'Unmatched gradient and variable shape {v.name}')
+            LogOnce(f'Unmatched gradient and variable shape {var.name}')
         self.optimizer.apply_gradients(
             zip(avg_grads, self.get_trainable_vars()))
         self.stats_loss.update(self.average_and_rename_vars(tower_losses),
@@ -433,8 +480,8 @@ class BaseSolverV2(BaseFlower):
                 for key_ in vis_out if key_ not in self.vis_port.keys()
             }
             self.vis_port = dict(**self.vis_port, **extra_vis)
-        for key in vis_out:
-            self.vis_port[key](vis_out[key])
+        for key, value in vis_out.items():
+            self.vis_port[key](value)
         return grads, losses, metrics, vis_out
 
 

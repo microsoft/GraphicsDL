@@ -9,7 +9,6 @@ import os
 from typing import List, Dict
 
 import tensorflow as tf
-from tensorflow.keras import backend as K
 
 from graphics_dl.graphicsutils import config as g_cfg
 from graphics_dl.modules_v2.reader.base_reader import BaseReaderV2
@@ -107,28 +106,31 @@ class CheckpointManager(object):
 
 
 class BaseRunnerV2(object):
+    """
+    Runner will manage the whole training/test
+    """
     def __init__(self, args: config.RunnerConfigurator):
         super().__init__()
         self.args = args
 
-        self.reader_module = self.load_module('custom_reader', reader)
-        self.net_module = self.load_module('net_def')
-        self.loss_module = self.load_module('loss_def')
-        self.callback_module = self.load_module('callback_def')
+        self.reader_module = self._load_module('custom_reader', reader)
+        self.net_module = self._load_module('net_def')
+        self.loss_module = self._load_module('loss_def')
+        self.callback_module = self._load_module('callback_def')
 
         self.readers: List[reader.BaseReaderV2] = list()
         self.nets: List[tf.keras.Model] = list()
         self.losses: List[basic.BasicLossProxy] = list()
         self.metrics: List[basic.BasicLossProxy] = list()
         self.built = False
-        self.initialize_environment()
+        self._initialize_environment()
 
         self.solvers: List[solver.BaseSolverV2] = list()
         self.validators: List[solver.BaseValidatorV2] = list()
 
         self.ckpt = None
 
-    def load_module(self, module_name, default=None):
+    def _load_module(self, module_name, default=None):
         try:
             example_module = self.args.example.replace(
                 '/', '.').replace('\\', '.')
@@ -139,15 +141,13 @@ class BaseRunnerV2(object):
         return loaded_module
 
     @staticmethod
-    def instance_case(cls_type, arg_dict: g_cfg.DictRecursive,
-                      external_dict=None):
+    def _instance_case(cls_type, arg_dict: g_cfg.DictRecursive, external_dict=None):
         if external_dict is None:
             external_dict = dict()
-        cls_kargs: Dict = arg_dict.match_function_args(
-            external_dict, cls_type.__init__)
+        cls_kargs: Dict = arg_dict.match_function_args(external_dict, cls_type.__init__)
         return cls_type(**cls_kargs)
 
-    def initialize_environment(self):
+    def _initialize_environment(self):
         """
         Initialize all reader
         """
@@ -155,20 +155,20 @@ class BaseRunnerV2(object):
             return
         for r_args in self.args.readers:
             reader_instance = getattr(self.reader_module, r_args.type)
-            reader_case: BaseReaderV2 = self.instance_case(reader_instance, r_args)
+            reader_case: BaseReaderV2 = self._instance_case(reader_instance, r_args)
             if self.args.dict_mode:
                 reader_case.enable_dict_mode()
             self.readers.append(reader_case)
 
-        [self.nets.append(self.instance_case(
+        [self.nets.append(self._instance_case(
             getattr(self.net_module, n_.type), n_)) for n_ in self.args.nets]
-        [self.losses.append(self.instance_case(
+        [self.losses.append(self._instance_case(
             getattr(self.loss_module, l_.type), l_)) for l_ in self.args.losses]
-        [self.metrics.append(self.instance_case(
+        [self.metrics.append(self._instance_case(
             getattr(self.loss_module, l_.type), l_)) for l_ in self.args.metrics]
         self.built = True
 
-    def initialize_solvers(self):
+    def _initialize_solvers(self):
         for arg_s in self.args.solvers:
             self.solvers.append(
                 solver.BaseSolverV2(
@@ -178,7 +178,7 @@ class BaseRunnerV2(object):
                     self.metrics,
                     self.args.dict_mode))
 
-    def initialize_validator(self):
+    def _initialize_validator(self):
         for arg_v in self.args.validators:
             self.validators.append(
                 solver.BaseValidatorV2(
@@ -188,14 +188,14 @@ class BaseRunnerV2(object):
                     self.metrics,
                     self.args.dict_mode))
 
-    def log_manager(self):
+    def _log_manager(self):
         train_log_dir = self.args.log_dir + '/train'
         val_log_dir = self.args.log_dir + '/test'
         train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         val_summary_writer = tf.summary.create_file_writer(val_log_dir)
         return train_summary_writer, val_summary_writer
 
-    def get_solvers_reader(self, instance):
+    def _get_solvers_reader(self, instance):
         solvers_reader = list()
         for s in instance:
             solvers_reader.extend(s.sequence.readers)
@@ -206,7 +206,7 @@ class BaseRunnerV2(object):
             reader_dict[s_r] = [r_ for r_ in self.readers if r_.name == s_r][0]
         return reader_dict
 
-    def run_validate(self, validators_reader_dict: Dict[str, reader.BaseReaderV2],
+    def _run_validate(self, validators_reader_dict: Dict[str, reader.BaseReaderV2],
                      out_callback, epoch, summary_writer=None):
         """
         Run a validation pass
@@ -237,64 +237,58 @@ class BaseRunnerV2(object):
                     out_callback.close(out_dict)
                 break
 
+    def _run_optimize(self, solvers_reader_dict: Dict[str, reader.BaseReaderV2],
+        train_iter: int, summary_writer):
+        solver_zips = zip(self.args.solvers, self.solvers, self.args.solver_ratio)
+        for s_args, s_case, s_readers in solver_zips:
+            s_func = s_case.train_step_with_debug if self.args.debug else s_case.train_step
+            for _ in range(s_readers):
+                s_func([solvers_reader_dict[r_].next() for r_ in s_args.sequence.readers])
+            if train_iter % self.args.show_iters == 0 and not self.args.epochs_stat:
+                s_case.apply_statistics(summary_writer, train_iter, True, '-- Iter')
+                s_case.apply_vis_port(summary_writer, train_iter)
+
+    def _run_epoch_statistics(self, val_reader_dict: Dict[str, reader.BaseReaderV2],
+        epoch, out_callback, summary_writer, ckpt_manager):
+        if self.args.epochs_stat:
+            for s in self.solvers:
+                s.apply_statistics(summary_writer, epoch, True, 'Train Epoch')
+                s.apply_vis_port(summary_writer, epoch)
+        self._run_validate(val_reader_dict, out_callback, epoch, summary_writer)
+        if epoch % self.args.epoch_stride == 0:
+            ckpt_manager.save()
+
     def train(self):
+        """
+        The training phase
+        """
         assert self.args.solver_mode == 'sequential'
-        K.set_learning_phase(1)
-        self.initialize_solvers()
-        self.initialize_validator()
-        train_summary_writer, val_summary_writer = self.log_manager()
-        train_iter = 0
-        solvers_reader_dict = self.get_solvers_reader(self.args.solvers)
-        validators_reader_dict = self.get_solvers_reader(self.args.validators)
+        self._initialize_solvers()
+        self._initialize_validator()
+
+        train_summary_writer, val_summary_writer = self._log_manager()
+
+        slv_reader_dict = self._get_solvers_reader(self.args.solvers)
+        val_reader_dict = self._get_solvers_reader(self.args.validators)
         validator_type = self.args.validator_type if self.args.validator_type\
             else 'ValidatorCallback'
+
         out_callback = None if not hasattr(self.net_module, validator_type)\
             else getattr(self.net_module, validator_type)(self.args)
-        for a_s, s in zip(self.args.solvers, self.solvers):
-            s_func = s.train_step_with_debug if self.args.debug else s.train_step
-            s_func([solvers_reader_dict[r_].next()
-                    for r_ in a_s.sequence.readers])
-            s.reset_statistics()
-        ckpt_manager = CheckpointManager(
-            self.args.model_dir,
-            self.args.pretrain_dir,
-            self.nets,
-            self.solvers)
+
+        ckpt_manager = CheckpointManager(self.args.model_dir, self.args.pretrain_dir,
+            self.nets, self.solvers)
         epoch_trained = ckpt_manager.restore()
-        epoch_trained = epoch_trained if epoch_trained == 0 else (
-            epoch_trained - 1) * self.args.epoch_stride
-        # ckpt_manager.save()
-        # self.run_validate(validators_reader_dict, out_callback, 0, val_summary_writer)
-        for e in range(epoch_trained, self.args.epochs):
+        epoch_trained = epoch_trained * self.args.epoch_stride
+        train_iter = 0
+        for epoch in range(epoch_trained, self.args.epochs):
             while True:
                 try:
-                    for a_s, s, s_r in zip(
-                            self.args.solvers, self.solvers, self.args.solver_ratio):
-                        s_func = s.train_step_with_debug if self.args.debug else s.train_step
-                        for _ in range(s_r):
-                            s_func([solvers_reader_dict[r_].next()
-                                    for r_ in a_s.sequence.readers])
-                        if train_iter % self.args.show_iters == 0:
-                            s.apply_statistics(None if self.args.epochs_stat else train_summary_writer, train_iter,
-                                               False if self.args.epochs_stat else True, '-- Iter')
-                            if not self.args.epochs_stat:
-                                s.apply_vis_port(
-                                    train_summary_writer, train_iter)
-                            train_summary_writer.flush()
+                    self._run_optimize(slv_reader_dict, train_iter, train_summary_writer)
                     train_iter += 1
                 except StopIteration:
-                    if self.args.epochs_stat:
-                        for s in self.solvers:
-                            s.apply_statistics(
-                                train_summary_writer, e, True, 'Train Epoch')
-                            s.apply_vis_port(train_summary_writer, train_iter)
-                    self.run_validate(
-                        validators_reader_dict,
-                        out_callback,
-                        e,
-                        val_summary_writer)
-                    if e % self.args.epoch_stride == 0:
-                        ckpt_manager.save()
+                    self._run_epoch_statistics(val_reader_dict, epoch, out_callback,\
+                        val_summary_writer, ckpt_manager)
                     break
 
     def test(self, profiling=False):
@@ -302,14 +296,12 @@ class BaseRunnerV2(object):
         The test phase
         """
         assert not profiling
-        K.set_learning_phase(0)
-        self.initialize_validator()
-        validators_reader_dict = self.get_solvers_reader(self.args.validators)
+        self._initialize_validator()
+        validators_reader_dict = self._get_solvers_reader(self.args.validators)
+        out_callback = None
         if len(self.args.callbacks):
             out_callback_cls = getattr(self.callback_module, 'TestCallback')
-            out_callback = self.instance_case(out_callback_cls, self.args.callbacks[0])
-        else:
-            out_callback = None
+            out_callback = self._instance_case(out_callback_cls, self.args.callbacks[0])
         ckpt_manager = CheckpointManager(
             self.args.model_dir,
             self.args.pretrain_dir,
@@ -319,14 +311,8 @@ class BaseRunnerV2(object):
         if out_callback is not None and not out_callback.initialize(epoch_trained):
             logging.info('Skip evaluate Epoch: %d...', epoch_trained)
             return
-        self.run_validate(
+        self._run_validate(
             validators_reader_dict,
             out_callback,
             epoch_trained,
             None)
-
-    def profiling(self):
-        self.test(profiling=True)
-
-    def perf(self):
-        raise NotImplementedError
