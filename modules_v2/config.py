@@ -114,7 +114,8 @@ class CallbackConfigurator(g_cfg.DictRecursive):
         self.type = str()
         self.compress = str()
         self.eval_keys = list([str()])
-        self.result_dir = str()
+        self.result_root = str()
+        self.dataset_name = str()
 
 
 class RunnerConfigurator(g_cfg.DictRecursive):
