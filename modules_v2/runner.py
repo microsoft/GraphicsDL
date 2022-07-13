@@ -214,6 +214,7 @@ class BaseRunnerV2(object):
         while self.args.validators and epoch % self.args.validate_stride == 0:
             try:
                 out_dict = dict()
+                in_dict = dict()
                 for val_args, val_case in zip(self.args.validators, self.validators):
                     v_func = val_case.val_step_with_debug if self.args.debug else val_case.val_step
 
@@ -223,8 +224,9 @@ class BaseRunnerV2(object):
                         val_reader.post(outs[0])
                     if out_callback:
                         out_dict[val_args.name] = outs
+                        in_dict[val_args.name] = v_data
                 if out_callback:
-                    out_callback.update(out_dict)
+                    out_callback.update(out_dict, in_dict)
                 DataDump().increment()
             except StopIteration:
                 out_dict = dict()
