@@ -403,14 +403,20 @@ class BaseSolverV2(BaseFlower):
                         f'{t_scope} (nearest queried: {cur_scope})')
         return self.trainable_vars
 
-    @staticmethod
-    def average_tower_grads(tower_grads):
+    def average_tower_grads(self, tower_grads):
         """
         Average multiple GPUs gradients
         """
         avg_grads = list()
-        for grads in zip(*tower_grads):
-            avg_grads.append(tf.reduce_mean(tf.stack(grads, axis=0), axis=0))
+        none_gradient = False
+        for g_idx, grads in enumerate(zip(*tower_grads)):
+            if grads[0] is None:
+                none_gradient = True
+                LogOnce(f'None gradients to {self.get_trainable_vars()[g_idx].name}')
+            else:
+                LogOnce(f'Apply gradients to {self.get_trainable_vars()[g_idx].name}')
+                avg_grads.append(tf.reduce_mean(tf.stack(grads, axis=0), axis=0))
+        assert not none_gradient
         return avg_grads
 
     @staticmethod
