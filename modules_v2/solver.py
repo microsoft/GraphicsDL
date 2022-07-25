@@ -315,8 +315,10 @@ class BaseFlower(object):
                 elif img_meta.shape.ndims > 5:
                     LogOnce(f'Unsupport visualized for {key} with shape {img_meta.shape}')
                     continue
-                elif img_meta.shape.as_list()[-1] not in [1, 3, 4]:
+
+                if img_meta.shape.as_list()[-1] not in [1, 3, 4]:
                     LogOnce(f'Visualization failed for unsupported channels of {key}')
+                    continue
                 tf.summary.image(key, img_meta, step, max_outputs=4)
 
 
