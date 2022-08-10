@@ -13,6 +13,7 @@ class DataItemConfigurator(g_cfg.DictRecursive):
     def __init__(self):
         super().__init__()
         self.name = str()
+        self.raw_name = str()
         self.type = str()
         self.quantized = int(0)
         self.raw_shape = list([0])
@@ -22,6 +23,12 @@ class DataItemConfigurator(g_cfg.DictRecursive):
         self.preprocess = str()
         # post-process will process data after batching with GPU context
         self.postprocess = list([str()])
+
+    def get_raw_name(self):
+        """
+        get compatible raw name
+        """
+        return self.raw_name if self.raw_name else self.name
 
 
 class ReaderConfigurator(g_cfg.DictRecursive):
